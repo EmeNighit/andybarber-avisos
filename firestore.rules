@@ -1,0 +1,26 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{db}/documents {
+    // CAMBIA el correo por el de Andy (el mismo de firebase-config.js)
+    function owner() { return request.auth != null && request.auth.token.email == "esmerlynantoniocb@gmail.com"; }
+    function signed() { return request.auth != null; }
+    match /clientes/{id} { allow read, write: if owner() || (signed() && request.auth.uid == id); }
+    match /reservas/{id} {
+      allow read: if signed();
+      allow create: if owner() || (signed() && request.resource.data.cid == request.auth.uid);
+      allow update: if owner() || (signed() && resource.data.cid == request.auth.uid
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['cobrado']));
+      allow delete: if owner() || (signed() && resource.data.cid == request.auth.uid);
+    }
+    match /config/{doc} { allow read: if signed(); allow write: if owner(); }
+    match /push/{id} { allow read: if owner(); allow write: if owner() || (signed() && request.auth.uid == id); }
+    match /espera/{id} {
+      allow read: if signed();
+      allow create: if signed() && request.auth.uid == id && request.resource.data.cid == id;
+      allow update, delete: if owner() || (signed() && request.auth.uid == id);
+    }
+    match /bajas/{k} { allow read: if signed(); allow write: if owner(); }
+    match /privado/{doc} { allow read, write: if owner(); }
+    match /avisos/{id} { allow read: if owner(); allow write: if owner() || (signed() && request.auth.uid == id); }
+  }
+}

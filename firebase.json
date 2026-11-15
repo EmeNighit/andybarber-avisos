@@ -1,0 +1,1 @@
+{"hosting":{"public":".","ignore":["firebase.json","firestore.rules","LEEME.md","**/.*","notificar/**","**/node_modules/**"],"headers":[{"source":"{sw.js,index.html,manifest.webmanifest,firebase-config.js}","headers":[{"key":"Cache-Control","value":"no-cache"}]},{"source":"**/*.png","headers":[{"key":"Cache-Control","value":"no-cache"}]}]},"firestore":{"rules":"firestore.rules"}}
