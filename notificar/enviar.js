@@ -1,7 +1,7 @@
 // Se ejecuta cada 5 minutos desde GitHub Actions. Lee las citas y manda los avisos push que toquen.
 const admin = require("firebase-admin");
 const crypto = require("crypto");
-const { eventos, esperaEstado, resumen, TZ } = require("./logica");
+const { eventos, esperaEstado, resumen, dispKey, dispRow, TZ } = require("./logica");
 
 admin.initializeApp({ credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)) });
 const db = admin.firestore(), FV = admin.firestore.FieldValue;
@@ -93,5 +93,32 @@ function genClave() {
       if (ok > 0) { await e.ref.update({ na: true }); enviados++; console.log("Aviso de agendar enviado a", d.nombre); }
     }
   }
+  // Disponibilidad pública: cada ~30 min se reconstruye desde las reservas (corrige cualquier diferencia)
+  const min = new Date(now).getUTCMinutes();
+  if (min < 5 || (min >= 30 && min < 35)) {
+    try {
+      const hoyD = new Date(now + parseInt(TZ) * 3600e3).toISOString().slice(0, 10);
+      const want = {};
+      snap.docs.forEach(x => {
+        const r = x.data(); if (r.dia < hoyD) return;
+        const row = dispRow(r, x.id, now); if (!row) return;
+        const k = dispKey(r), c = want[k];
+        if (!c || (row.estado !== "cancelada" && c.estado === "cancelada")) want[k] = row;
+      });
+      const ds = await db.collection("disp").get();
+      let batch = db.batch(), n = 0, cambios = 0;
+      const op = async f => { f(); cambios++; if (++n >= 400) { await batch.commit(); batch = db.batch(); n = 0; } };
+      for (const x of ds.docs) {
+        const w = want[x.id];
+        if (!w) await op(() => batch.delete(x.ref));
+        else { if (JSON.stringify(x.data()) !== JSON.stringify(w)) await op(() => batch.set(x.ref, w)); delete want[x.id]; }
+      }
+      for (const k of Object.keys(want)) await op(() => batch.set(db.collection("disp").doc(k), want[k]));
+      if (n) await batch.commit();
+      console.log("Disponibilidad sincronizada. Cambios:", cambios);
+    } catch (e) { console.log("Error al sincronizar disponibilidad:", e.message); }
+  }
+  // Marca de que el sistema sigue funcionando (el panel avisa si pasa más de 1 hora sin verla)
+  await db.doc("config/estado").set({ ult: now });
   console.log("Listo. Avisos enviados:", enviados, "· citas revisadas:", snap.size);
 })().catch(e => { console.error(e); process.exit(1); });

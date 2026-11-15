@@ -65,4 +65,14 @@ function resumen(reservas, hoy, bn) {
   const det = ids.length > 1 ? " (" + ids.map(id => ((bn && bn[id]) || "Peluca") + " " + por[id]).join(", ") + ")" : "";
   return { titulo: "Tu agenda de hoy ✂️", cuerpo: act.length + (act.length === 1 ? " cita" : " citas") + " hoy" + det + ". La primera es a las " + hl(act[0].hora) + "." };
 }
-module.exports = { eventos, esperaEstado, resumen, hl, diaTxt, TZ };
+// Fila pública de disponibilidad (misma regla que usa la app): sin nombre, servicio ni precio
+function dispKey(r) { return r.dia + "_" + String(r.hora).replace(":", "") + "_" + (r.bid || "peluca"); }
+function dispRow(r, id, now) {
+  const b = { dia: r.dia, hora: r.hora, bid: r.bid || "peluca", cid: r.cid, rid: id };
+  if (r.estado === "activa") return { ...b, estado: "activa" };
+  if (r.estado === "bloqueada" || (r.estado === "cancelada" && r.bloqueo)) return { ...b, estado: "bloqueada" };
+  if (r.estado === "cancelada" && r.esp === "pend" && !r.bloqueo && now - (r.canceladaEn || 0) < 108e5)
+    return { ...b, estado: "cancelada", esp: "pend", canceladaEn: r.canceladaEn || now };
+  return null;
+}
+module.exports = { eventos, esperaEstado, resumen, dispKey, dispRow, hl, diaTxt, TZ };
