@@ -1,7 +1,7 @@
 // Se ejecuta cada 5 minutos desde GitHub Actions. Lee las citas y manda los avisos push que toquen.
 const admin = require("firebase-admin");
 const crypto = require("crypto");
-const { eventos, esperaEstado, resumen, dispKey, dispRow, TZ } = require("./logica");
+const { eventos, esperaEstado, resumen, dispKey, dispRow, ocupaTurno, turnosLibres, elegirEspera, hl, diaTxt, TZ } = require("./logica");
 
 admin.initializeApp({ credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)) });
 const db = admin.firestore(), FV = admin.firestore.FieldValue;
@@ -118,6 +118,44 @@ function genClave() {
       console.log("Disponibilidad sincronizada. Cambios:", cambios);
     } catch (e) { console.log("Error al sincronizar disponibilidad:", e.message); }
   }
+  // Lista de espera automática: cuando alguien cancela, el turno pasa solo al primero de la lista.
+  // Va después de la sincronización de disponibilidad para que esta no pise la fila nueva.
+  try {
+    const rs2 = (await db.collection("reservas").where("dia", ">=", ayer).get()).docs.map(x => ({ id: x.id, ...x.data() }));
+    const libres = turnosLibres(rs2, now);
+    if (libres.length) {
+      const es2 = (await db.collection("espera").get()).docs.map(x => ({ id: x.id, ...x.data() }));
+      const bq = new Set((await db.collection("bloqueos").get()).docs.map(x => x.id)); // clientes con reservas pausadas
+      for (const r of libres) {
+        const k = dispKey(r);
+        if (rs2.some(x => x.id !== r.id && dispKey(x) === k && ocupaTurno(x))) continue; // otro ya tomó esa hora
+        const f = elegirEspera(r, es2.filter(e => !bq.has(e.cid)), rs2, now);
+        if (!f) continue;
+        const nref = db.collection("reservas").doc(), oref = db.collection("reservas").doc(r.id),
+              dref = db.collection("disp").doc(k), eref = db.collection("espera").doc(f.id);
+        const nueva = { cid: f.cid, tipo: f.tipo === "nino" ? "nino" : "adulto", servicio: String(f.servicio || "Corte").slice(0, 120),
+          precio: Number(f.precio) || 0, dia: r.dia, hora: r.hora, estado: "activa", motivo: "", recordado: 0,
+          creada: now, deEspera: true, bid: r.bid || "peluca" };
+        const hecho = await db.runTransaction(async t => {
+          const [o, d, e] = await Promise.all([t.get(oref), t.get(dref), t.get(eref)]);
+          if (!o.exists || o.data().estado !== "cancelada" || o.data().esp !== "pend") return false; // ya lo resolvieron
+          if (!e.exists) return false;                                                               // ya salió de la lista
+          if (d.exists && d.data().rid !== r.id && d.data().estado !== "cancelada") return false;    // la hora ya la tiene otro
+          t.set(nref, nueva); t.set(dref, dispRow(nueva, nref.id, now)); t.update(oref, { esp: "dado" }); t.delete(eref);
+          return true;
+        });
+        if (!hecho) continue;
+        r.esp = "dado"; rs2.push({ id: nref.id, ...nueva });
+        const cuando = diaTxt(r.dia) + " a las " + hl(r.hora);
+        console.log("Turno de la lista de espera asignado:", f.nombre, cuando);
+        try {
+          const ok = await enviar(f.cid, "¡Se liberó un turno para ti! 🎉", "Tu cita de " + nueva.servicio + " quedó para el " + cuando + ". Si no puedes ir, cancélala en la app.", nref.id + ":ne");
+          if (ok > 0) { await nref.update({ ne: true }); enviados++; }
+        } catch (x) { console.log("Error avisando al cliente:", x.message); }
+        if (barberUid) { try { await enviar(barberUid, "Turno ocupado desde la lista de espera", (await nombre(f.cid)) + " · " + nueva.servicio + " · " + cuando, nref.id + ":nbe"); } catch (x) { console.log("Error avisando al barbero:", x.message); } }
+      }
+    }
+  } catch (e) { console.log("Error en la lista de espera automática:", e.message); }
   // Marca de que el sistema sigue funcionando (el panel avisa si pasa más de 1 hora sin verla)
   await db.doc("config/estado").set({ ult: now });
   console.log("Listo. Avisos enviados:", enviados, "· citas revisadas:", snap.size);

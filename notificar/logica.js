@@ -39,7 +39,7 @@ function eventos(d, now, bn) {
         titulo: "Tu cita fue cancelada", cuerpo: "Tu cita del " + cuando + " fue cancelada por el barbero. Entra a la app para reservar otra hora." });
     } else if (fresca(d.canceladaEn) && d.nbc !== d.canceladaEn) {
       out.push({ para: "barbero", set: { nbc: d.canceladaEn }, titulo: "Cita cancelada",
-        cuerpo: "{n} canceló su cita del " + cuando + con + (d.motivo ? ". Motivo: " + d.motivo : "") + "." + (d.esp === "pend" ? " ¿Quieres ofrecer ese turno a la lista de espera? Abre la app." : "") });
+        cuerpo: "{n} canceló su cita del " + cuando + con + (d.motivo ? ". Motivo: " + d.motivo : "") + "." + (d.esp === "pend" ? " El turno pasará solo al primero de la lista de espera en unos minutos. Si prefieres dejarlo libre, abre la app." : "") });
     }
   }
   if (d.prop && d.prop.dia && d.prop.hora && fresca(d.propEn) && d.np !== d.propEn) {
@@ -75,4 +75,24 @@ function dispRow(r, id, now) {
     return { ...b, estado: "cancelada", esp: "pend", canceladaEn: r.canceladaEn || now };
   return null;
 }
-module.exports = { eventos, esperaEstado, resumen, dispKey, dispRow, hl, diaTxt, TZ };
+// ---- Lista de espera automática (v0.9.4) ----
+const ocupaTurno = x => x.estado === "activa" || x.estado === "bloqueada" || (x.estado === "cancelada" && x.bloqueo);
+// Turnos cancelados que esperan a la lista: sin bloqueo, dentro de las 3 h de reserva y con al menos 30 min por delante.
+function turnosLibres(reservas, now) {
+  return reservas.filter(r => r.estado === "cancelada" && r.esp === "pend" && !r.bloqueo && r.dia && r.hora
+      && now - (r.canceladaEn || 0) < 108e5 && Date.parse(r.dia + "T" + r.hora + ":00" + TZ) - now >= 30 * 60000)
+    .sort((a, b) => (a.canceladaEn || 0) - (b.canceladaEn || 0));
+}
+// A quién le toca un turno liberado: el primero de la lista (orden de llegada) del mismo barbero,
+// que no sea quien canceló, no haya vencido y no tenga ya otra cita activa (1 cita por persona).
+function elegirEspera(r, esperas, reservas, now) {
+  const bid = r.bid || "peluca";
+  return esperas.filter(e => e.cid && e.cid !== r.cid && (e.bid || "peluca") === bid)
+    .sort((a, b) => (a.creada || 0) - (b.creada || 0))
+    .find(e => {
+      const mias = reservas.filter(x => x.cid === e.cid);
+      if (esperaEstado(e, now, mias) === "fuera") return false;
+      return !mias.some(x => x.estado === "activa" && Date.parse(x.dia + "T" + x.hora + ":00" + TZ) > now);
+    }) || null;
+}
+module.exports = { ocupaTurno, turnosLibres, elegirEspera, eventos, esperaEstado, resumen, dispKey, dispRow, hl, diaTxt, TZ };
