@@ -1,7 +1,7 @@
 // Se ejecuta cada 5 minutos desde GitHub Actions. Lee las citas y manda los avisos push que toquen.
 const admin = require("firebase-admin");
 const crypto = require("crypto");
-const { eventos, esperaEstado, resumen, dispKey, dispRow, ocupaTurno, turnosLibres, elegirEspera, hl, diaTxt, TZ } = require("./logica");
+const { eventos, esperaEstado, resumen, dispKey, dispRow, citasDuplicadas, ocupaTurno, turnosLibres, elegirEspera, hl, diaTxt, TZ } = require("./logica");
 
 admin.initializeApp({ credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)) });
 const db = admin.firestore(), FV = admin.firestore.FieldValue;
@@ -156,6 +156,26 @@ function genClave() {
       }
     }
   } catch (e) { console.log("Error en la lista de espera automática:", e.message); }
+  // Una persona = una cita activa. La app ya lo impide; esto corrige cualquier caso que se le escape (quedan 5 min como máximo).
+  try {
+    const rs3 = (await db.collection("reservas").where("dia", ">=", ayer).get()).docs.map(x => ({ id: x.id, ...x.data() }));
+    for (const g of citasDuplicadas(rs3, now)) {
+      for (const r of g.cancelar) {
+        const oref = db.collection("reservas").doc(r.id), dref = db.collection("disp").doc(dispKey(r));
+        const hecho = await db.runTransaction(async t => {
+          const [o, d] = await Promise.all([t.get(oref), t.get(dref)]);
+          if (!o.exists || o.data().estado !== "activa") return false; // ya cambió
+          t.update(oref, { estado: "cancelada", motivo: "Solo se permite una cita activa a la vez", por: "sistema", canceladaEn: now, nbc: now, esp: "" });
+          if (d.exists && d.data().rid === r.id) t.delete(dref); // libera la hora
+          return true;
+        });
+        if (!hecho) continue;
+        const cual = diaTxt(r.dia) + " a las " + hl(r.hora), queda = diaTxt(g.queda.dia) + " a las " + hl(g.queda.hora);
+        console.log("Cita repetida cancelada:", cual, "· se conserva:", queda);
+        try { await enviar(r.cid, "Cancelamos una cita repetida", "Solo puedes tener una cita activa. Cancelamos la del " + cual + "; te queda la del " + queda + ".", r.id + ":dup"); } catch (x) { console.log("Error avisando:", x.message); }
+      }
+    }
+  } catch (e) { console.log("Error al revisar citas repetidas:", e.message); }
   // Marca de que el sistema sigue funcionando (el panel avisa si pasa más de 1 hora sin verla)
   await db.doc("config/estado").set({ ult: now });
   console.log("Listo. Avisos enviados:", enviados, "· citas revisadas:", snap.size);

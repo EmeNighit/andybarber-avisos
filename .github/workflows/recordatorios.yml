@@ -28,6 +28,7 @@ jobs:
           OWNER_EMAIL: esmerlynantoniocb@gmail.com
           APP_URL: https://andybarber-afb6e.web.app
       - name: Mantener activo (GitHub pausa los programados tras 60 días sin actividad)
+        if: always()
         run: |
           last=$(git log -1 --format=%ct); now=$(date +%s)
           if [ $((now-last)) -gt 3888000 ]; then

@@ -95,4 +95,18 @@ function elegirEspera(r, esperas, reservas, now) {
       return !mias.some(x => x.estado === "activa" && Date.parse(x.dia + "T" + x.hora + ":00" + TZ) > now);
     }) || null;
 }
-module.exports = { ocupaTurno, turnosLibres, elegirEspera, eventos, esperaEstado, resumen, dispKey, dispRow, hl, diaTxt, TZ };
+// Una persona = una cita activa. Si por cualquier camino quedan dos o más, se conserva la primera que se creó y se cancelan las demás.
+function citasDuplicadas(reservas, now) {
+  const por = {};
+  reservas.filter(r => r.estado === "activa" && r.cid && r.cid !== "barbero" && !r.bloqueo && r.dia && r.hora
+      && Date.parse(r.dia + "T" + r.hora + ":00" + TZ) > now)
+    .forEach(r => { (por[r.cid] = por[r.cid] || []).push(r); });
+  const out = [];
+  Object.keys(por).forEach(c => {
+    const l = por[c]; if (l.length < 2) return;
+    l.sort((a, b) => ((a.creada || 0) - (b.creada || 0)) || ((a.dia + a.hora) < (b.dia + b.hora) ? -1 : 1));
+    out.push({ queda: l[0], cancelar: l.slice(1) });
+  });
+  return out;
+}
+module.exports = { citasDuplicadas, ocupaTurno, turnosLibres, elegirEspera, eventos, esperaEstado, resumen, dispKey, dispRow, hl, diaTxt, TZ };
