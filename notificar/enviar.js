@@ -1,7 +1,7 @@
 // Se ejecuta cada 5 minutos desde GitHub Actions. Lee las citas y manda los avisos push que toquen.
 const admin = require("firebase-admin");
 const crypto = require("crypto");
-const { eventos, esperaEstado, resumen, dispKey, dispRow, citasDuplicadas, ocupaTurno, turnosLibres, elegirEspera, hl, diaTxt, TZ } = require("./logica");
+const { esperaPublica, eventos, esperaEstado, resumen, dispKey, dispRow, citasDuplicadas, ocupaTurno, turnosLibres, elegirEspera, hl, diaTxt, TZ } = require("./logica");
 
 admin.initializeApp({ credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)) });
 const db = admin.firestore(), FV = admin.firestore.FieldValue;
@@ -177,6 +177,15 @@ function genClave() {
       }
     }
   } catch (e) { console.log("Error al revisar citas repetidas:", e.message); }
+  // v0.9.9: copia sin datos personales de la lista de espera (los clientes ya no leen /espera completa)
+  try {
+    const items = esperaPublica((await db.collection("espera").get()).docs.map(x => ({ id: x.id, ...x.data() })));
+    const ref = db.doc("config/espera"), cur = await ref.get();
+    if (!cur.exists || JSON.stringify(cur.data().items || []) !== JSON.stringify(items)) {
+      await ref.set({ items, ult: now });
+      console.log("Lista de espera pública actualizada:", items.length);
+    }
+  } catch (e) { console.log("Error al publicar la lista de espera:", e.message); }
   // Marca de que el sistema sigue funcionando (el panel avisa si pasa más de 1 hora sin verla)
   await db.doc("config/estado").set({ ult: now });
   console.log("Listo. Avisos enviados:", enviados, "· citas revisadas:", snap.size);

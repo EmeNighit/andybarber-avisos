@@ -109,4 +109,12 @@ function citasDuplicadas(reservas, now) {
   });
   return out;
 }
-module.exports = { citasDuplicadas, ocupaTurno, turnosLibres, elegirEspera, eventos, esperaEstado, resumen, dispKey, dispRow, hl, diaTxt, TZ };
+// v0.9.9: copia pública de la lista de espera SIN nombres ni servicios (solo para que cada cliente vea su puesto).
+function esperaPublica(docs) {
+  return docs
+    .map(d => ({ id: d.id, cid: d.cid, bid: d.bid || "peluca", dia: d.dia, creada: d.creada }))
+    .filter(x => x.id && x.cid && x.dia && typeof x.creada === "number")
+    .sort((a, b) => a.creada - b.creada || (a.id < b.id ? -1 : 1));
+}
+
+module.exports = { esperaPublica, citasDuplicadas, ocupaTurno, turnosLibres, elegirEspera, eventos, esperaEstado, resumen, dispKey, dispRow, hl, diaTxt, TZ };
