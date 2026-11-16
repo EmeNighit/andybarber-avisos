@@ -5,6 +5,7 @@ const { eventos, esperaEstado, resumen, dispKey, dispRow, citasDuplicadas, ocupa
 
 admin.initializeApp({ credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)) });
 const db = admin.firestore(), FV = admin.firestore.FieldValue;
+try { console.log("Cuenta de servicio en uso:", JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT).client_email); } catch (e) {}
 const APP_URL = process.env.APP_URL || "./", OWNER = process.env.OWNER_EMAIL;
 
 const nombres = {};
