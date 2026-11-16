@@ -24,7 +24,8 @@ jobs:
         run: node enviar.js
         working-directory: notificar
         env:
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          # Usa la llave de permisos mínimos (FIREBASE_SA_MIN) si existe; si no, la anterior. Para volver atrás basta borrar el secreto FIREBASE_SA_MIN.
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SA_MIN || secrets.FIREBASE_SERVICE_ACCOUNT }}
           OWNER_EMAIL: esmerlynantoniocb@gmail.com
           APP_URL: https://andybarber-afb6e.web.app
       - name: Mantener activo (GitHub pausa los programados tras 60 días sin actividad)
