@@ -186,6 +186,15 @@ function genClave() {
       console.log("Lista de espera pública actualizada:", items.length);
     }
   } catch (e) { console.log("Error al publicar la lista de espera:", e.message); }
+  // v0.9.12: botón de emergencia del panel: invalida todas las sesiones del barbero (los equipos deben volver a entrar con su contraseña)
+  try {
+    const sref = db.doc("config/seguridad"), ss = await sref.get(), sd = ss.exists ? ss.data() : {};
+    if (barberUid && sd.revocarTodo && sd.revocarTodo > (sd.hecho || 0)) {
+      await admin.auth().revokeRefreshTokens(barberUid);
+      await sref.set({ hecho: Date.now() }, { merge: true });
+      console.log("Sesiones del panel del barbero invalidadas");
+    }
+  } catch (e) { console.log("Error al invalidar sesiones:", e.message); }
   // Marca de que el sistema sigue funcionando (el panel avisa si pasa más de 1 hora sin verla)
   await db.doc("config/estado").set({ ult: now });
   console.log("Listo. Avisos enviados:", enviados, "· citas revisadas:", snap.size);
