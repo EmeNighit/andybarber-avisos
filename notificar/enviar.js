@@ -6,7 +6,9 @@ const { espAbierto, esperaPublica, eventos, esperaEstado, resumen, dispKey, disp
 admin.initializeApp({ credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)) });
 const db = admin.firestore(), FV = admin.firestore.FieldValue;
 try { console.log("Cuenta de servicio en uso:", JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT).client_email); } catch (e) {}
-const APP_URL = process.env.APP_URL || "./", OWNER = process.env.OWNER_EMAIL;
+const APP_URL = process.env.APP_URL || "./", OWNER = process.env.OWNER_EMAIL, BARBER = process.env.BARBER_EMAIL;
+let staffUids = []; // v0.9.13: cuentas del administrador y del barbero (los avisos del panel llegan a las dos)
+const STAFF = "__staff";
 
 const nombres = {};
 async function nombre(cid) {
@@ -14,6 +16,7 @@ async function nombre(cid) {
   return nombres[cid];
 }
 async function enviar(uid, titulo, cuerpo, tag) {
+  if (uid === STAFF) { let t = 0; for (const u of staffUids) { try { t += await enviar(u, titulo, cuerpo, tag); } catch (e) { console.log("Error enviando al panel:", e.message); } } return t; }
   const ref = db.collection("push").doc(uid), s = await ref.get();
   const toks = (s.exists && s.data().toks) || [];
   if (!toks.length) return 0;
@@ -41,7 +44,11 @@ function genClave() {
   const ayer = new Date(now - 864e5 + (parseInt(TZ) * 3600e3)).toISOString().slice(0, 10); // ayer en hora dominicana
   const snap = await db.collection("reservas").where("dia", ">=", ayer).get();
   let barberUid = null;
-  try { barberUid = (await admin.auth().getUserByEmail(OWNER)).uid; } catch (e) { console.log("No se encontró al barbero:", e.message); }
+  for (const em of [BARBER, OWNER]) {
+    if (!em) continue;
+    try { staffUids.push((await admin.auth().getUserByEmail(em)).uid); } catch (e) { console.log("No se encontró una cuenta del panel:", e.code || e.message); }
+  }
+  if (staffUids.length) barberUid = STAFF;
   let enviados = 0;
   for (const doc of snap.docs) {
     const d = doc.data();
@@ -189,8 +196,8 @@ function genClave() {
   // v0.9.12: botón de emergencia del panel: invalida todas las sesiones del barbero (los equipos deben volver a entrar con su contraseña)
   try {
     const sref = db.doc("config/seguridad"), ss = await sref.get(), sd = ss.exists ? ss.data() : {};
-    if (barberUid && sd.revocarTodo && sd.revocarTodo > (sd.hecho || 0)) {
-      await admin.auth().revokeRefreshTokens(barberUid);
+    if (staffUids.length && sd.revocarTodo && sd.revocarTodo > (sd.hecho || 0)) {
+      for (const u of staffUids) await admin.auth().revokeRefreshTokens(u);
       await sref.set({ hecho: Date.now() }, { merge: true });
       console.log("Sesiones del panel del barbero invalidadas");
     }
