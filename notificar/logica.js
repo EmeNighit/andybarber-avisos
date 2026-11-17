@@ -78,8 +78,11 @@ function dispRow(r, id, now) {
 // ---- Lista de espera automática (v0.9.4) ----
 const ocupaTurno = x => x.estado === "activa" || x.estado === "bloqueada" || (x.estado === "cancelada" && x.bloqueo);
 // Turnos cancelados que esperan a la lista: sin bloqueo, dentro de las 3 h de reserva y con al menos 30 min por delante.
+// v0.9.9: el cliente ya no ve la lista de espera completa, así que no puede saber si hay alguien esperando al cancelar.
+// Por eso un turno cancelado sin marca (esp vacío) también se ofrece; solo se excluye si ya se resolvió ("dado") o se rechazó ("no").
+const espAbierto = r => !r.esp || r.esp === "pend";
 function turnosLibres(reservas, now) {
-  return reservas.filter(r => r.estado === "cancelada" && r.esp === "pend" && !r.bloqueo && r.dia && r.hora
+  return reservas.filter(r => r.estado === "cancelada" && espAbierto(r) && !r.bloqueo && r.dia && r.hora
       && now - (r.canceladaEn || 0) < 108e5 && Date.parse(r.dia + "T" + r.hora + ":00" + TZ) - now >= 30 * 60000)
     .sort((a, b) => (a.canceladaEn || 0) - (b.canceladaEn || 0));
 }
@@ -117,4 +120,4 @@ function esperaPublica(docs) {
     .sort((a, b) => a.creada - b.creada || (a.id < b.id ? -1 : 1));
 }
 
-module.exports = { esperaPublica, citasDuplicadas, ocupaTurno, turnosLibres, elegirEspera, eventos, esperaEstado, resumen, dispKey, dispRow, hl, diaTxt, TZ };
+module.exports = { espAbierto, esperaPublica, citasDuplicadas, ocupaTurno, turnosLibres, elegirEspera, eventos, esperaEstado, resumen, dispKey, dispRow, hl, diaTxt, TZ };

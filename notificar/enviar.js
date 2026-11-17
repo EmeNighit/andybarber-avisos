@@ -1,7 +1,7 @@
 // Se ejecuta cada 5 minutos desde GitHub Actions. Lee las citas y manda los avisos push que toquen.
 const admin = require("firebase-admin");
 const crypto = require("crypto");
-const { esperaPublica, eventos, esperaEstado, resumen, dispKey, dispRow, citasDuplicadas, ocupaTurno, turnosLibres, elegirEspera, hl, diaTxt, TZ } = require("./logica");
+const { espAbierto, esperaPublica, eventos, esperaEstado, resumen, dispKey, dispRow, citasDuplicadas, ocupaTurno, turnosLibres, elegirEspera, hl, diaTxt, TZ } = require("./logica");
 
 admin.initializeApp({ credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)) });
 const db = admin.firestore(), FV = admin.firestore.FieldValue;
@@ -139,7 +139,7 @@ function genClave() {
           creada: now, deEspera: true, bid: r.bid || "peluca" };
         const hecho = await db.runTransaction(async t => {
           const [o, d, e] = await Promise.all([t.get(oref), t.get(dref), t.get(eref)]);
-          if (!o.exists || o.data().estado !== "cancelada" || o.data().esp !== "pend") return false; // ya lo resolvieron
+          if (!o.exists || o.data().estado !== "cancelada" || !espAbierto(o.data())) return false; // ya lo resolvieron
           if (!e.exists) return false;                                                               // ya salió de la lista
           if (d.exists && d.data().rid !== r.id && d.data().estado !== "cancelada") return false;    // la hora ya la tiene otro
           t.set(nref, nueva); t.set(dref, dispRow(nueva, nref.id, now)); t.update(oref, { esp: "dado" }); t.delete(eref);
