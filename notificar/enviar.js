@@ -7,7 +7,7 @@ admin.initializeApp({ credential: admin.credential.cert(JSON.parse(process.env.F
 const db = admin.firestore(), FV = admin.firestore.FieldValue;
 try { console.log("Cuenta de servicio en uso:", JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT).client_email); } catch (e) {}
 const APP_URL = process.env.APP_URL || "./", OWNER = process.env.OWNER_EMAIL, BARBER = process.env.BARBER_EMAIL;
-let staffUids = []; // v0.9.13: cuentas del administrador y del barbero (los avisos del panel llegan a las dos)
+let staffUids = [], ownerUid = null; // v0.9.13: cuentas del administrador y del barbero (los avisos del panel llegan a las dos)
 const STAFF = "__staff";
 
 const nombres = {};
@@ -46,7 +46,7 @@ function genClave() {
   let barberUid = null;
   for (const em of [BARBER, OWNER]) {
     if (!em) continue;
-    try { staffUids.push((await admin.auth().getUserByEmail(em)).uid); } catch (e) { console.log("No se encontró una cuenta del panel:", e.code || e.message); }
+    try { const u = (await admin.auth().getUserByEmail(em)).uid; staffUids.push(u); if (em === OWNER) ownerUid = u; } catch (e) { console.log("No se encontró una cuenta del panel:", e.code || e.message); }
   }
   if (staffUids.length) barberUid = STAFF;
   let enviados = 0;
@@ -193,6 +193,18 @@ function genClave() {
       console.log("Lista de espera pública actualizada:", items.length);
     }
   } catch (e) { console.log("Error al publicar la lista de espera:", e.message); }
+  // v0.9.14: avisos de seguridad (equipo sin autorizar entró al panel) -> notificación solo al administrador
+  try {
+    if (ownerUid) {
+      const sg = await db.collection("segavisos").where("push", "==", false).get();
+      for (const d of sg.docs) {
+        let ok = 0;
+        try { ok = await enviar(ownerUid, "Seguridad del panel", d.data().texto || "Entró un equipo sin autorizar.", d.id + ":seg"); } catch (e) { console.log("Error avisando de seguridad:", e.message); }
+        await d.ref.update({ push: true });
+        if (ok > 0) { enviados++; console.log("Aviso de seguridad enviado al administrador"); }
+      }
+    }
+  } catch (e) { console.log("Error en los avisos de seguridad:", e.message); }
   // v0.9.12: botón de emergencia del panel: invalida todas las sesiones del barbero (los equipos deben volver a entrar con su contraseña)
   try {
     const sref = db.doc("config/seguridad"), ss = await sref.get(), sd = ss.exists ? ss.data() : {};
