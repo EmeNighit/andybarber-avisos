@@ -81,7 +81,16 @@ function genClave() {
     if (d.pedido && !d.listo && !d.err) {
       try {
         const clave = genClave();
-        await admin.auth().updateUser(r.id, { password: clave });
+        // v0.9.16: el cliente entra con teléfono@clientes.andybarber.app. Si esa cuenta ya existe se le cambia la clave a ESA;
+        // si no existe (el cliente nunca creó contraseña) se le crea el correo a su cuenta para que la clave temporal sí le sirva.
+        const cs = await db.collection("clientes").doc(r.id).get(), tel = cs.exists ? String(cs.data().tel || "").replace(/\D/g, "") : "";
+        if (tel.length >= 7) {
+          const h = crypto.createHash("sha256").update("ab:" + tel).digest().subarray(0, 10).toString("hex"), bj = await db.collection("bajas").doc(h).get(),
+                g = bj.exists ? (bj.data().gen || 0) : 0, em = tel + (g ? "g" + g : "") + "@clientes.andybarber.app";
+          let u = null; try { u = await admin.auth().getUserByEmail(em); } catch (x) { /* no existe */ }
+          if (u) await admin.auth().updateUser(u.uid, { password: clave });
+          else await admin.auth().updateUser(r.id, { email: em, password: clave });
+        } else await admin.auth().updateUser(r.id, { password: clave });
         await r.ref.set({ pedido: d.pedido, clave, listo: now });
         console.log("Clave temporal creada para un cliente");
       } catch (e) {
